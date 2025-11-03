@@ -1,5 +1,5 @@
 const { User } = require('../models');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 // Utils (set your env secret or use a default for development)
@@ -14,7 +14,7 @@ function generateToken(user) {
 // Register
 exports.register = async (req, res) => {
   try {
-    const { email, password, ...profile } = req.body;
+    const { email, password, dateOfBirth, firstName, lastName, phone, avatar, bio } = req.body;
 
     // Check if already exists
     const exists = await User.findOne({ where: { email } });
@@ -26,7 +26,30 @@ exports.register = async (req, res) => {
     const user = await User.create({
       email,
       password: hash,
-      ...profile,
+      dateOfBirth,
+      firstName,
+      lastName,
+      phone,
+      avatar,
+      bio,
+      preferences: {
+        language: 'es',
+        notifications: {
+          email: true,
+          push: true,
+          sms: false,
+        },
+      },
+      plan: 'free',
+      planStartDate: new Date(),
+      planEndDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+      planStatus: 'active',
+      isActive: true,
+      isVerified: false,
+      verificationToken: null,
+      lastLogin: new Date(),
+      resetPasswordToken: null,
+      resetPasswordExpires: null,
     });
 
     res.status(201).json({ message: 'User registered', id: user.id });

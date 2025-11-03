@@ -20,6 +20,10 @@ app.get('/', (req, res) => {
   });
 });
 
+// Rutas de la API
+const userRoutes = require('./routes/user.routes');
+app.use('/api/users', userRoutes);
+
 // Manejo de rutas no encontradas
 app.use((req, res) => {
   res.status(404).json({ 
