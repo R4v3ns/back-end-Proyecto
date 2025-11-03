@@ -1,4 +1,4 @@
 node_modules/
 .env
 out/
-CloneSpotify.sqlite
+database.sqlite

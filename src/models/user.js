@@ -1,15 +1,15 @@
 'use strict';
 
-const { Model } = require('sequelize');
-const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 module.exports = (sequelize, DataTypes) => {
- 
+  class User extends require('sequelize').Model {}
+
   User.init(
     {
       id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
+        type: DataTypes.STRING(36),
+        defaultValue: () => crypto.randomUUID(),
         primaryKey: true,
       },
       email: {
@@ -24,7 +24,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
         validate: {
-          len: [6, 255], // Mínimo 6 caracteres
+          len: [6, 255],
         },
       },
       // Información de perfil
@@ -52,11 +52,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.DATE,
         allowNull: true,
       },
-      // Preferencias de cuenta
+      // Preferencias de cuenta (JSON se almacena como TEXT en SQLite)
       preferences: {
-        type: DataTypes.JSON,
+        type: DataTypes.TEXT,
         allowNull: true,
-        defaultValue: {
+        defaultValue: JSON.stringify({
           language: 'es',
           notifications: {
             email: true,
@@ -65,13 +65,23 @@ module.exports = (sequelize, DataTypes) => {
           },
           theme: 'light',
           timezone: 'America/Mexico_City',
+        }),
+        get() {
+          const value = this.getDataValue('preferences');
+          return value ? JSON.parse(value) : null;
+        },
+        set(value) {
+          this.setDataValue('preferences', value ? JSON.stringify(value) : null);
         },
       },
-      // Gestión de plan
+      // Gestión de plan (ENUM se almacena como STRING en SQLite)
       plan: {
-        type: DataTypes.ENUM('free', 'basic', 'premium', 'enterprise'),
+        type: DataTypes.STRING,
         defaultValue: 'free',
         allowNull: false,
+        validate: {
+          isIn: [['free', 'basic', 'premium', 'enterprise']],
+        },
       },
       planStartDate: {
         type: DataTypes.DATE,
@@ -82,9 +92,12 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
       planStatus: {
-        type: DataTypes.ENUM('active', 'expired', 'cancelled'),
+        type: DataTypes.STRING,
         defaultValue: 'active',
         allowNull: false,
+        validate: {
+          isIn: [['active', 'expired', 'cancelled']],
+        },
       },
       // Autenticación y sesión
       isActive: {
@@ -117,167 +130,9 @@ module.exports = (sequelize, DataTypes) => {
       sequelize,
       modelName: 'User',
       tableName: 'users',
-      hooks: {
-        // Hashear contraseña antes de crear
-        beforeCreate: async (user) => {
-          if (user.password) {
-            user.password = await User.hashPassword(user.password);
-          }
-        },
-        // Hashear contraseña antes de actualizar (si cambió)
-        beforeUpdate: async (user) => {
-          if (user.changed('password')) {
-            user.password = await User.hashPassword(user.password);
-          }
-        },
-      },
+      // Hooks de hash y otra lógica de modelo se pueden poner aquí si necesario
     }
   );
-
-  // Métodos estáticos para operaciones comunes
-
-  // Registrarse (crear nuevo usuario)
-  User.register = async function (userData) {
-    try {
-      const user = await User.create({
-        email: userData.email,
-        password: userData.password,
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        phone: userData.phone,
-        preferences: userData.preferences || {},
-      });
-      return user;
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  // Iniciar sesión (buscar usuario y verificar contraseña)
-  User.login = async function (email, password) {
-    try {
-      const user = await User.findOne({ where: { email } });
-      
-      if (!user) {
-        throw new Error('Usuario no encontrado');
-      }
-
-      if (!user.isActive) {
-        throw new Error('Cuenta desactivada');
-      }
-
-      const isPasswordValid = await user.comparePassword(password);
-      
-      if (!isPasswordValid) {
-        throw new Error('Contraseña incorrecta');
-      }
-
-      // Actualizar último inicio de sesión
-      await user.update({ lastLogin: new Date() });
-
-      return user;
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  // Cambiar contraseña
-  User.prototype.changePassword = async function (currentPassword, newPassword) {
-    try {
-      const isCurrentPasswordValid = await this.comparePassword(currentPassword);
-      
-      if (!isCurrentPasswordValid) {
-        throw new Error('La contraseña actual es incorrecta');
-      }
-
-      this.password = newPassword;
-      await this.save();
-      
-      return true;
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  // Configurar perfil
-  User.prototype.updateProfile = async function (profileData) {
-    try {
-      const allowedFields = [
-        'firstName',
-        'lastName',
-        'phone',
-        'avatar',
-        'bio',
-        'dateOfBirth',
-      ];
-
-      const updateData = {};
-      allowedFields.forEach((field) => {
-        if (profileData[field] !== undefined) {
-          updateData[field] = profileData[field];
-        }
-      });
-
-      await this.update(updateData);
-      await this.reload();
-      
-      return this;
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  // Actualizar preferencias de cuenta
-  User.prototype.updatePreferences = async function (preferencesData) {
-    try {
-      const currentPreferences = this.preferences || {};
-      const updatedPreferences = {
-        ...currentPreferences,
-        ...preferencesData,
-        notifications: {
-          ...(currentPreferences.notifications || {}),
-          ...(preferencesData.notifications || {}),
-        },
-      };
-
-      await this.update({ preferences: updatedPreferences });
-      await this.reload();
-      
-      return this;
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  // Gestionar plan
-  User.prototype.updatePlan = async function (planData) {
-    try {
-      const updateData = {};
-      
-      if (planData.plan) {
-        updateData.plan = planData.plan;
-      }
-      
-      if (planData.planStartDate) {
-        updateData.planStartDate = planData.planStartDate;
-      }
-      
-      if (planData.planEndDate) {
-        updateData.planEndDate = planData.planEndDate;
-      }
-      
-      if (planData.planStatus) {
-        updateData.planStatus = planData.planStatus;
-      }
-
-      await this.update(updateData);
-      await this.reload();
-      
-      return this;
-    } catch (error) {
-      throw error;
-    }
-  };
 
   return User;
 };
