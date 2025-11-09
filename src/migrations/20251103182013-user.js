@@ -11,7 +11,7 @@ module.exports = {
       },
       email: {
         type: Sequelize.STRING,
-        allowNull: false,
+        allowNull: true, // Permite registro con teléfono solo
         unique: true,
       },
       password: {
@@ -92,6 +92,10 @@ module.exports = {
         type: Sequelize.STRING,
         allowNull: true,
       },
+      emailVerificationTokenExpires: {
+        type: Sequelize.DATE,
+        allowNull: true,
+      },
       lastLogin: {
         type: Sequelize.DATE,
         allowNull: true,
@@ -102,6 +106,54 @@ module.exports = {
         allowNull: true,
       },
       resetPasswordExpires: {
+        type: Sequelize.DATE,
+        allowNull: true,
+      },
+      // Términos y privacidad
+      termsAccepted: {
+        type: Sequelize.INTEGER,
+        defaultValue: 0,
+        allowNull: false,
+      },
+      privacyAccepted: {
+        type: Sequelize.INTEGER,
+        defaultValue: 0,
+        allowNull: false,
+      },
+      termsAcceptedAt: {
+        type: Sequelize.DATE,
+        allowNull: true,
+      },
+      // Autenticación de dos factores (2FA)
+      twoFactorSecret: {
+        type: Sequelize.STRING,
+        allowNull: true,
+      },
+      twoFactorEnabled: {
+        type: Sequelize.INTEGER,
+        defaultValue: 0,
+        allowNull: false,
+      },
+      twoFactorAttempts: {
+        type: Sequelize.INTEGER,
+        defaultValue: 0,
+        allowNull: false,
+      },
+      twoFactorAttemptsExpires: {
+        type: Sequelize.DATE,
+        allowNull: true,
+      },
+      // Verificación de teléfono
+      phoneVerified: {
+        type: Sequelize.INTEGER,
+        defaultValue: 0,
+        allowNull: false,
+      },
+      phoneVerificationToken: {
+        type: Sequelize.STRING,
+        allowNull: true,
+      },
+      phoneVerificationTokenExpires: {
         type: Sequelize.DATE,
         allowNull: true,
       },

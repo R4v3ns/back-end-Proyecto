@@ -14,18 +14,12 @@ module.exports = (sequelize, DataTypes) => {
       },
       email: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true, // Permite registro con teléfono solo
         unique: true,
-        validate: {
-          isEmail: true,
-        },
       },
       password: {
         type: DataTypes.STRING,
         allowNull: false,
-        validate: {
-          len: [6, 255],
-        },
       },
       // Información de perfil
       firstName: {
@@ -79,9 +73,6 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         defaultValue: 'free',
         allowNull: false,
-        validate: {
-          isIn: [['free', 'basic', 'premium', 'enterprise']],
-        },
       },
       planStartDate: {
         type: DataTypes.DATE,
@@ -95,9 +86,6 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         defaultValue: 'active',
         allowNull: false,
-        validate: {
-          isIn: [['active', 'expired', 'cancelled']],
-        },
       },
       // Autenticación y sesión
       isActive: {
@@ -110,6 +98,10 @@ module.exports = (sequelize, DataTypes) => {
       },
       verificationToken: {
         type: DataTypes.STRING,
+        allowNull: true,
+      },
+      emailVerificationTokenExpires: {
+        type: DataTypes.DATE,
         allowNull: true,
       },
       lastLogin: {
@@ -125,12 +117,54 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.DATE,
         allowNull: true,
       },
+      // Términos y privacidad
+      termsAccepted: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+      },
+      privacyAccepted: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+      },
+      termsAcceptedAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      // Autenticación de dos factores (2FA)
+      twoFactorSecret: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      twoFactorEnabled: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+      },
+      twoFactorAttempts: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+      },
+      twoFactorAttemptsExpires: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      // Verificación de teléfono
+      phoneVerified: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+      },
+      phoneVerificationToken: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      phoneVerificationTokenExpires: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
     },
     {
       sequelize,
       modelName: 'User',
       tableName: 'users',
-      // Hooks de hash y otra lógica de modelo se pueden poner aquí si necesario
     }
   );
 

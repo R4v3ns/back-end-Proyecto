@@ -4,11 +4,29 @@ const userController = require('../controller/user.controller');
 const { authenticate } = require('../middleware/auth');
 
 // Rutas públicas (no requieren autenticación)
-router.post('/register', userController.register);
+// Registro
+router.post('/register/email', userController.registerWithEmail);
+router.post('/register/phone', userController.registerWithPhone);
+router.post('/register', userController.register); // Compatibilidad
+
+// Verificación de email
+router.post('/verify-email', userController.verifyEmail);
+router.post('/resend-email-verification', userController.resendEmailVerification);
+
+// Verificación de teléfono
+router.post('/verify-phone', userController.verifyPhone);
+router.post('/resend-phone-verification', userController.resendPhoneVerification);
+
+// Login y logout
 router.post('/login', userController.login);
 router.post('/logout', userController.logout);
 
 // Rutas protegidas (requieren autenticación)
+// Autenticación de dos factores (2FA)
+router.get('/2fa/qr', authenticate, userController.generateTwoFactorQR);
+router.post('/2fa/verify', authenticate, userController.verifyTwoFactor);
+
+// Gestión de cuenta
 router.post('/change-password', authenticate, userController.changePassword);
 router.put('/profile', authenticate, userController.updateProfile);
 router.get('/preferences', authenticate, userController.getPreferences);

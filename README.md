@@ -52,7 +52,13 @@ npm start
 
 - `POST /api/users/register`: Registrar usuario
 - `POST /api/users/login`: Iniciar sesión
+  - Body: `{ email, password }`
+  - Retorna: token JWT, información del usuario
+
 - `POST /api/users/logout`: Cerrar sesión
+
+### Gestión de Cuenta
+
 - `POST /api/users/change-password`: Cambiar contraseña (requiere autenticación)
 - `PUT /api/users/profile`: Actualizar perfil (requiere autenticación)
 - `GET /api/users/preferences`: Ver preferencias (requiere autenticación)
