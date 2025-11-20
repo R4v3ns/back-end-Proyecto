@@ -68,8 +68,10 @@ app.use((err, req, res, next) => {
 });
 
 // Iniciar servidor
-app.listen(PORT, () => {
+// Escuchar en todas las interfaces (0.0.0.0) para permitir conexiones desde dispositivos móviles
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  console.log(`Servidor accesible desde la red en http://192.168.0.21:${PORT}`);
   console.log(`Entorno: ${process.env.NODE_ENV || 'development'}`);
 });
 
