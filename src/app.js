@@ -7,7 +7,33 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 // Middlewares
-app.use(cors());
+// Configuración de CORS para permitir el frontend (Opción 1: Permitir todos los orígenes de Expo - Recomendado para desarrollo)
+app.use(cors({
+  origin: function (origin, callback) {
+    // Permitir requests sin origen (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    // Permitir localhost en cualquier puerto
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return callback(null, true);
+    }
+    
+    // Permitir todos los dominios de Expo
+    if (origin.includes('.exp.direct') || origin.includes('.expo.dev')) {
+      return callback(null, true);
+    }
+    
+    // Permitir el origen específico de desarrollo
+    if (origin === 'http://localhost:5173') {
+      return callback(null, true);
+    }
+    
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

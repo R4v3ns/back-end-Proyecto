@@ -116,6 +116,46 @@ function validateVerificationToken(token) {
   return { valid: true };
 }
 
+// Helper: format user response (exclude sensitive data and map fields for frontend)
+function formatUserResponse(user) {
+  const userObj = user.toJSON ? user.toJSON() : user;
+  const {
+    password,
+    verificationToken,
+    emailVerificationTokenExpires,
+    resetPasswordToken,
+    resetPasswordExpires,
+    twoFactorSecret,
+    phoneVerificationToken,
+    phoneVerificationTokenExpires,
+    ...safeUser
+  } = userObj;
+  
+  // Mapear campos del backend a los que espera el frontend
+  const formattedUser = {
+    ...safeUser,
+    // Mapear bio -> biography
+    biography: safeUser.bio || undefined,
+    // Mapear dateOfBirth -> birthDate (mantener ambos para compatibilidad)
+    birthDate: safeUser.dateOfBirth || undefined,
+    // Mapear avatar -> profileImage
+    profileImage: safeUser.avatar || undefined,
+    // Generar campo name combinando firstName y lastName
+    name: safeUser.firstName && safeUser.lastName 
+      ? `${safeUser.firstName} ${safeUser.lastName}`.trim()
+      : safeUser.firstName || safeUser.lastName || undefined,
+  };
+  
+  // Remover campos undefined para limpiar la respuesta
+  Object.keys(formattedUser).forEach(key => {
+    if (formattedUser[key] === undefined) {
+      delete formattedUser[key];
+    }
+  });
+  
+  return formattedUser;
+}
+
 // Helper: check if account exists and return helpful message
 async function checkExistingAccount(email, phone) {
   if (email) {
@@ -770,14 +810,21 @@ exports.login = async (req, res) => {
     const { email, password } = req.body;
 
     const user = await User.findOne({ where: { email } });
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
 
     const valid = await bcrypt.compare(password, user.password);
-    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!valid) return res.status(401).json({ error: 'Credenciales inválidas' });
+
+    // Actualizar último login
+    user.lastLogin = new Date();
+    await user.save();
 
     const token = generateToken(user);
 
-    res.json({ token, user: { id: user.id, email: user.email } });
+    res.json({ 
+      token, 
+      user: formatUserResponse(user) 
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -793,18 +840,66 @@ exports.logout = async (req, res) => {
 exports.changePassword = async (req, res) => {
   try {
     const userId = req.user.id; // req.user populated by authentication middleware
-    const { currentPassword, newPassword } = req.body;
+    const { currentPassword, newPassword, passwordConfirmation } = req.body;
 
     const user = await User.findByPk(userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
+    // Validar contraseña actual
     const valid = await bcrypt.compare(currentPassword, user.password);
-    if (!valid) return res.status(401).json({ error: 'Current password incorrect' });
+    if (!valid) {
+      return res.status(401).json({ 
+        error: 'La contraseña actual es incorrecta',
+        field: 'currentPassword'
+      });
+    }
+
+    // Validar nueva contraseña
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({
+        error: passwordValidation.error,
+        field: 'newPassword',
+      });
+    }
+
+    // Validar confirmación de contraseña
+    const passwordConfirmationValidation = validatePasswordConfirmation(newPassword, passwordConfirmation);
+    if (!passwordConfirmationValidation.valid) {
+      return res.status(400).json({
+        error: passwordConfirmationValidation.error,
+        field: 'passwordConfirmation',
+      });
+    }
 
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
 
-    res.json({ message: 'Password changed successfully' });
+    res.json({ message: 'Contraseña cambiada exitosamente' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Get Profile
+exports.getProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await User.findByPk(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    // Formatear usuario para el frontend
+    const formattedUser = formatUserResponse(user);
+    
+    // Devolver en el formato que espera el frontend
+    // El frontend espera los campos directamente en la respuesta
+    res.json({ 
+      ...formattedUser, // Campos directamente en la raíz
+      user: formattedUser // También en objeto user para compatibilidad
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -814,26 +909,71 @@ exports.changePassword = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user.id; // req.user should be set by auth middleware
-    const profileFields = [
-      'firstName',
-      'lastName',
-      'phone',
-      'avatar',
-      'bio',
-      'dateOfBirth'
-    ];
+    
+    // Mapear campos del frontend a los del backend
     const updates = {};
-    for (const field of profileFields) {
-      if (field in req.body) updates[field] = req.body[field];
+    
+    // Manejar firstName y lastName (pueden venir separados o en el campo name)
+    if (req.body.name) {
+      // Si viene el campo name, dividirlo en firstName y lastName
+      const nameParts = req.body.name.trim().split(' ');
+      updates.firstName = nameParts[0] || req.body.firstName;
+      updates.lastName = nameParts.slice(1).join(' ') || req.body.lastName || null;
+    } else {
+      if (req.body.firstName !== undefined) updates.firstName = req.body.firstName;
+      if (req.body.lastName !== undefined) updates.lastName = req.body.lastName;
     }
-    const [n, [user]] = await User.update(updates, {
-      where: { id: userId },
-      returning: true // returns the updated record
+    
+    // Mapear biography -> bio
+    if (req.body.biography !== undefined) {
+      updates.bio = req.body.biography;
+    }
+    if (req.body.bio !== undefined) {
+      updates.bio = req.body.bio;
+    }
+    
+    // Mapear birthDate -> dateOfBirth
+    if (req.body.birthDate !== undefined) {
+      updates.dateOfBirth = req.body.birthDate;
+    }
+    if (req.body.dateOfBirth !== undefined) {
+      updates.dateOfBirth = req.body.dateOfBirth;
+    }
+    
+    // Mapear profileImage -> avatar
+    if (req.body.profileImage !== undefined) {
+      updates.avatar = req.body.profileImage;
+    }
+    if (req.body.avatar !== undefined) {
+      updates.avatar = req.body.avatar;
+    }
+    
+    // Campos directos
+    if (req.body.phone !== undefined) updates.phone = req.body.phone;
+    
+    // SQLite no soporta 'returning: true', así que actualizamos y luego buscamos
+    const [affectedRows] = await User.update(updates, {
+      where: { id: userId }
     });
 
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (affectedRows === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
 
-    res.json({ message: 'Profile updated', user });
+    // Obtener el usuario actualizado
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    // Devolver la respuesta en el formato que espera el frontend
+    const formattedUser = formatUserResponse(user);
+    
+    res.json({ 
+      message: 'Perfil actualizado exitosamente',
+      ...formattedUser, // Incluir campos directamente en la respuesta para compatibilidad
+      user: formattedUser // También incluir en objeto user
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -845,22 +985,27 @@ exports.updatePreferences = async (req, res) => {
     const userId = req.user.id;
     let user = await User.findByPk(userId);
 
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
     let preferences = {};
     if (user.preferences) {
       try {
-        preferences = JSON.parse(user.preferences);
+        preferences = typeof user.preferences === 'string' 
+          ? JSON.parse(user.preferences) 
+          : user.preferences;
       } catch (_) {
         preferences = {};
       }
     }
     preferences = { ...preferences, ...req.body };
 
-    user.preferences = JSON.stringify(preferences);
+    user.preferences = preferences;
     await user.save();
 
-    res.json({ message: 'Preferences updated', preferences });
+    res.json({ 
+      message: 'Preferencias actualizadas exitosamente',
+      preferences: user.preferences 
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -872,12 +1017,14 @@ exports.getPreferences = async (req, res) => {
     const userId = req.user.id;
     let user = await User.findByPk(userId);
 
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
     let preferences = {};
     if (user.preferences) {
       try {
-        preferences = JSON.parse(user.preferences);
+        preferences = typeof user.preferences === 'string' 
+          ? JSON.parse(user.preferences) 
+          : user.preferences;
       } catch (_) {
         preferences = {};
       }
@@ -895,10 +1042,14 @@ exports.getPlan = async (req, res) => {
     const userId = req.user.id;
     let user = await User.findByPk(userId);
 
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-    // Mock plan info; adjust as your model supports
-    res.json({ plan: user.plan || null });
+    res.json({ 
+      plan: user.plan || null,
+      planStartDate: user.planStartDate,
+      planEndDate: user.planEndDate,
+      planStatus: user.planStatus
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -909,12 +1060,30 @@ exports.updatePlan = async (req, res) => {
     const userId = req.user.id;
     let user = await User.findByPk(userId);
 
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-    user.plan = req.body.plan;
+    if (req.body.plan) {
+      user.plan = req.body.plan;
+    }
+    if (req.body.planStatus) {
+      user.planStatus = req.body.planStatus;
+    }
+    if (req.body.planStartDate) {
+      user.planStartDate = req.body.planStartDate;
+    }
+    if (req.body.planEndDate) {
+      user.planEndDate = req.body.planEndDate;
+    }
+    
     await user.save();
 
-    res.json({ message: 'Plan updated', plan: user.plan });
+    res.json({ 
+      message: 'Plan actualizado exitosamente',
+      plan: user.plan,
+      planStartDate: user.planStartDate,
+      planEndDate: user.planEndDate,
+      planStatus: user.planStatus
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
