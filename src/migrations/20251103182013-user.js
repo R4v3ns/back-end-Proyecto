@@ -19,6 +19,11 @@ module.exports = {
         allowNull: false,
       },
       // Información de perfil
+      username: {
+        type: Sequelize.STRING,
+        allowNull: true,
+        unique: true,
+      },
       firstName: {
         type: Sequelize.STRING,
         allowNull: true,
@@ -174,6 +179,11 @@ module.exports = {
     await queryInterface.addIndex('users', ['email'], {
       unique: true,
       name: 'users_email_unique'
+    });
+    
+    await queryInterface.addIndex('users', ['username'], {
+      unique: true,
+      name: 'users_username_unique'
     });
     
     await queryInterface.addIndex('users', ['plan']);

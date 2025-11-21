@@ -22,6 +22,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
       // Información de perfil
+      username: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        unique: true,
+      },
       firstName: {
         type: DataTypes.STRING,
         allowNull: true,
@@ -127,23 +132,6 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: false,
       },
       termsAcceptedAt: {
-        type: DataTypes.DATE,
-        allowNull: true,
-      },
-      // Autenticación de dos factores (2FA)
-      twoFactorSecret: {
-        type: DataTypes.STRING,
-        allowNull: true,
-      },
-      twoFactorEnabled: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-      },
-      twoFactorAttempts: {
-        type: DataTypes.INTEGER,
-        defaultValue: 0,
-      },
-      twoFactorAttemptsExpires: {
         type: DataTypes.DATE,
         allowNull: true,
       },

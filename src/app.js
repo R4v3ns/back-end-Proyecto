@@ -48,7 +48,9 @@ app.get('/', (req, res) => {
 
 // Rutas de la API
 const userRoutes = require('./routes/user.routes');
+const songRoutes = require('./routes/song.routes');
 app.use('/api/users', userRoutes);
+app.use('/api/songs', songRoutes);
 
 // Manejo de rutas no encontradas
 app.use((req, res) => {

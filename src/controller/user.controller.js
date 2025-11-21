@@ -913,16 +913,69 @@ exports.updateProfile = async (req, res) => {
     // Mapear campos del frontend a los del backend
     const updates = {};
     
-    // Manejar firstName y lastName (pueden venir separados o en el campo name)
-    if (req.body.name) {
-      // Si viene el campo name, dividirlo en firstName y lastName
-      const nameParts = req.body.name.trim().split(' ');
-      updates.firstName = nameParts[0] || req.body.firstName;
-      updates.lastName = nameParts.slice(1).join(' ') || req.body.lastName || null;
+    // Manejar username
+    if (req.body.username !== undefined) {
+      console.log('📝 Username recibido:', req.body.username);
+      // Validar que el username no esté vacío si se proporciona
+      if (req.body.username && req.body.username.trim()) {
+        const trimmedUsername = req.body.username.trim();
+        console.log('📝 Verificando unicidad del username:', trimmedUsername);
+        
+        // Verificar que el username no esté en uso por otro usuario
+        const existingUser = await User.findOne({ 
+          where: { 
+            username: trimmedUsername,
+            id: { [require('sequelize').Op.ne]: userId } // Excluir el usuario actual
+          } 
+        });
+        
+        if (existingUser) {
+          console.log('❌ Username ya está en uso por:', existingUser.id);
+          return res.status(409).json({ 
+            error: 'El nombre de usuario ya está en uso',
+            field: 'username'
+          });
+        }
+        
+        updates.username = trimmedUsername;
+        console.log('✅ Username válido, se agregará a updates:', trimmedUsername);
+      } else {
+        console.log('⚠️ Username vacío o null, se establecerá como null');
+        updates.username = null;
+      }
     } else {
-      if (req.body.firstName !== undefined) updates.firstName = req.body.firstName;
-      if (req.body.lastName !== undefined) updates.lastName = req.body.lastName;
+      console.log('ℹ️ Username no está en el body de la petición');
     }
+    
+    // Manejar firstName y lastName
+    // Prioridad: si vienen firstName/lastName directamente, usarlos
+    // Si no, pero viene name, dividirlo
+    if (req.body.firstName !== undefined || req.body.lastName !== undefined) {
+      // Si vienen firstName o lastName directamente, usarlos (tienen prioridad)
+      if (req.body.firstName !== undefined) {
+        updates.firstName = req.body.firstName ? req.body.firstName.trim() : null;
+      }
+      if (req.body.lastName !== undefined) {
+        updates.lastName = req.body.lastName ? req.body.lastName.trim() : null;
+      }
+    } else if (req.body.name) {
+      // Si no vienen firstName/lastName pero viene name, dividirlo
+      const nameParts = req.body.name.trim().split(' ').filter(part => part.length > 0);
+      if (nameParts.length > 0) {
+        updates.firstName = nameParts[0];
+        updates.lastName = nameParts.slice(1).join(' ') || null;
+      }
+    }
+    
+    console.log('📝 firstName/lastName - Request body:', { 
+      firstName: req.body.firstName, 
+      lastName: req.body.lastName, 
+      name: req.body.name 
+    });
+    console.log('📝 firstName/lastName - Updates:', { 
+      firstName: updates.firstName, 
+      lastName: updates.lastName 
+    });
     
     // Mapear biography -> bio
     if (req.body.biography !== undefined) {
@@ -951,10 +1004,17 @@ exports.updateProfile = async (req, res) => {
     // Campos directos
     if (req.body.phone !== undefined) updates.phone = req.body.phone;
     
+    // Log para debugging
+    console.log('📝 Update Profile - User ID:', userId);
+    console.log('📝 Update Profile - Request body:', { ...req.body, password: req.body.password ? '***' : undefined });
+    console.log('📝 Update Profile - Updates to apply:', updates);
+    
     // SQLite no soporta 'returning: true', así que actualizamos y luego buscamos
     const [affectedRows] = await User.update(updates, {
       where: { id: userId }
     });
+    
+    console.log('📝 Update Profile - Affected rows:', affectedRows);
 
     if (affectedRows === 0) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
