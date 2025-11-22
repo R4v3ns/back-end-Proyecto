@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -38,6 +39,10 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Servir archivos estáticos (audio e imágenes)
+// Asegúrate de crear la carpeta uploads en la raíz del proyecto
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 // Ruta de prueba
 app.get('/', (req, res) => {
   res.json({ 
@@ -50,7 +55,7 @@ app.get('/', (req, res) => {
 const userRoutes = require('./routes/user.routes');
 const songRoutes = require('./routes/song.routes');
 app.use('/api/users', userRoutes);
-app.use('/api/songs', songRoutes);
+app.use('/songs', songRoutes); // El frontend espera /songs, no /api/songs
 
 // Manejo de rutas no encontradas
 app.use((req, res) => {

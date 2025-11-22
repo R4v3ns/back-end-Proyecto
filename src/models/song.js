@@ -13,35 +13,22 @@ module.exports = (sequelize, DataTypes) => {
       title: {
         type: DataTypes.STRING,
         allowNull: false,
-        validate: {
-          notEmpty: true,
-        },
       },
       artist: {
         type: DataTypes.STRING,
         allowNull: false,
-        validate: {
-          notEmpty: true,
-        },
       },
       duration: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Duración en segundos',
+        type: DataTypes.INTEGER, // en segundos
+        allowNull: false,
       },
       coverUrl: {
         type: DataTypes.STRING,
-        allowNull: false,
-        validate: {
-          notEmpty: true,
-        },
+        allowNull: true,
       },
       audioUrl: {
         type: DataTypes.STRING,
         allowNull: false,
-        validate: {
-          notEmpty: true,
-        },
       },
     },
     {
@@ -54,4 +41,3 @@ module.exports = (sequelize, DataTypes) => {
 
   return Song;
 };
-
