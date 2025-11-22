@@ -22,10 +22,6 @@ router.post('/login', userController.login);
 router.post('/logout', userController.logout);
 
 // Rutas protegidas (requieren autenticación)
-// Autenticación de dos factores (2FA)
-router.get('/2fa/qr', authenticate, userController.generateTwoFactorQR);
-router.post('/2fa/verify', authenticate, userController.verifyTwoFactor);
-
 // Gestión de cuenta
 router.get('/me', authenticate, userController.getProfile); // Alias común para obtener perfil
 router.get('/profile', authenticate, userController.getProfile);

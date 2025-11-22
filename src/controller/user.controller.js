@@ -2,8 +2,6 @@ const { User } = require('../models');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const speakeasy = require('speakeasy');
-const QRCode = require('qrcode');
 
 // Utils (set your env secret or use a default for development)
 const JWT_SECRET = process.env.JWT_SECRET || 'development_secret';
@@ -94,20 +92,6 @@ function validateTermsAndPrivacy(termsAccepted, privacyAccepted) {
   return { valid: true, termsAccepted: termsAcceptedBool, privacyAccepted: privacyAcceptedBool };
 }
 
-// Helper: Validar código 2FA
-function validateTwoFactorCode(twoFactorCode) {
-  if (!twoFactorCode) {
-    return { valid: false, error: 'El código 2FA es requerido' };
-  }
-  if (twoFactorCode.length !== 6) {
-    return { valid: false, error: 'El código 2FA debe tener exactamente 6 dígitos' };
-  }
-  if (!/^\d+$/.test(twoFactorCode)) {
-    return { valid: false, error: 'El código 2FA solo debe contener números' };
-  }
-  return { valid: true };
-}
-
 // Helper: Validar token de verificación
 function validateVerificationToken(token) {
   if (!token) {
@@ -125,7 +109,6 @@ function formatUserResponse(user) {
     emailVerificationTokenExpires,
     resetPasswordToken,
     resetPasswordExpires,
-    twoFactorSecret,
     phoneVerificationToken,
     phoneVerificationTokenExpires,
     ...safeUser
@@ -268,7 +251,6 @@ exports.registerWithEmail = async (req, res) => {
       verificationToken,
       emailVerificationTokenExpires: verificationTokenExpires,
       phoneVerified: false,
-      twoFactorEnabled: false,
     });
 
     // TODO: Enviar email de verificación (implementar servicio de email)
@@ -289,7 +271,7 @@ exports.registerWithEmail = async (req, res) => {
       lastName: user.lastName,
       verificationToken: process.env.NODE_ENV === 'development' ? verificationToken : undefined, // Solo en desarrollo
       instructions: 'Revisa tu correo electrónico y haz clic en el enlace de verificación. Si no recibes el correo, puedes solicitar un nuevo enlace.',
-      nextSteps: ['Verificar tu correo electrónico', 'Completar tu perfil', 'Configurar autenticación de dos factores (opcional)'],
+      nextSteps: ['Verificar tu correo electrónico', 'Completar tu perfil'],
     });
   } catch (err) {
     if (err.name === 'SequelizeUniqueConstraintError') {
@@ -385,7 +367,6 @@ exports.registerWithPhone = async (req, res) => {
       phoneVerified: false,
       phoneVerificationToken,
       phoneVerificationTokenExpires,
-      twoFactorEnabled: false,
     });
 
     // TODO: Enviar SMS con código de verificación (implementar servicio de SMS)
@@ -406,7 +387,7 @@ exports.registerWithPhone = async (req, res) => {
       lastName: user.lastName,
       verificationCode: process.env.NODE_ENV === 'development' ? phoneVerificationToken : undefined, // Solo en desarrollo
       instructions: 'Revisa tu teléfono y ingresa el código de verificación de 6 dígitos que te enviamos por SMS.',
-      nextSteps: ['Verificar tu número de teléfono', 'Completar tu perfil', 'Configurar autenticación de dos factores (opcional)'],
+      nextSteps: ['Verificar tu número de teléfono', 'Completar tu perfil'],
     });
   } catch (err) {
     if (err.name === 'SequelizeUniqueConstraintError') {
@@ -527,137 +508,6 @@ exports.resendEmailVerification = async (req, res) => {
       message: 'Se ha enviado un nuevo enlace de verificación a tu correo electrónico.',
       verificationToken: process.env.NODE_ENV === 'development' ? verificationToken : undefined, // Solo en desarrollo
       instructions: 'Revisa tu correo electrónico y haz clic en el enlace de verificación.',
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// Generate 2FA QR code
-exports.generateTwoFactorQR = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const user = await User.findByPk(userId);
-
-    if (!user) {
-      return res.status(404).json({ error: 'Usuario no encontrado' });
-    }
-
-    // Si ya tiene 2FA habilitado, no generar otro
-    if (user.twoFactorEnabled) {
-      return res.status(400).json({
-        error: 'La autenticación de dos factores ya está habilitada',
-        message: 'Ya tienes la autenticación de dos factores activada en tu cuenta.',
-      });
-    }
-
-    // Generar secreto para 2FA
-    const secret = speakeasy.generateSecret({
-      name: `${APP_NAME} (${user.email || user.phone})`,
-      issuer: APP_NAME,
-    });
-
-    // Guardar el secreto temporalmente (no habilitado hasta que se verifique)
-    user.twoFactorSecret = secret.base32;
-    await user.save();
-
-    // Generar QR code
-    const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url);
-
-    res.json({
-      message: 'Escanea el código QR con tu aplicación de autenticación (ej: Google Authenticator)',
-      qrCode: qrCodeUrl,
-      secret: secret.base32, // Para casos donde el usuario no puede escanear el QR
-      instructions: '1. Abre tu aplicación de autenticación\n2. Escanea el código QR\n3. Ingresa el código de 6 dígitos que aparece en la aplicación',
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// Verify 2FA code and enable 2FA
-exports.verifyTwoFactor = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { twoFactorCode } = req.body;
-
-    // Validar código 2FA
-    const codeValidation = validateTwoFactorCode(twoFactorCode);
-    if (!codeValidation.valid) {
-      return res.status(400).json({
-        error: codeValidation.error,
-        field: 'twoFactorCode',
-      });
-    }
-
-    const user = await User.findByPk(userId);
-
-    if (!user) {
-      return res.status(404).json({ error: 'Usuario no encontrado' });
-    }
-
-    if (!user.twoFactorSecret) {
-      return res.status(400).json({
-        error: 'No se ha generado un código QR para 2FA',
-        message: 'Por favor, genera primero un código QR para la autenticación de dos factores.',
-      });
-    }
-
-    // Verificar si hay demasiados intentos
-    if (user.twoFactorAttempts >= 5) {
-      if (user.twoFactorAttemptsExpires && new Date() < user.twoFactorAttemptsExpires) {
-        const minutesLeft = Math.ceil((user.twoFactorAttemptsExpires - new Date()) / 1000 / 60);
-        return res.status(429).json({
-          error: 'Demasiados intentos fallidos',
-          message: `Has excedido el número máximo de intentos. Por favor, espera ${minutesLeft} minuto(s) antes de intentar nuevamente.`,
-          retryAfter: minutesLeft,
-        });
-      } else {
-        // Resetear intentos si expiró
-        user.twoFactorAttempts = 0;
-        user.twoFactorAttemptsExpires = null;
-      }
-    }
-
-    // Verificar el código
-    const verified = speakeasy.totp.verify({
-      secret: user.twoFactorSecret,
-      encoding: 'base32',
-      token: twoFactorCode,
-      window: 2, // Permitir ±2 intervalos de tiempo (60 segundos cada uno)
-    });
-
-    if (!verified) {
-      // Incrementar intentos
-      user.twoFactorAttempts += 1;
-      
-      // Si es el 5to intento fallido, establecer tiempo de espera (15 minutos)
-      if (user.twoFactorAttempts >= 5) {
-        user.twoFactorAttemptsExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutos
-      }
-
-      await user.save();
-
-      return res.status(400).json({
-        error: 'Código 2FA incorrecto',
-        message: 'El código ingresado no es válido. Por favor, verifica que estés usando el código actual de tu aplicación de autenticación.',
-        attemptsRemaining: Math.max(0, 5 - user.twoFactorAttempts),
-      });
-    }
-
-    // Código correcto, habilitar 2FA
-    user.twoFactorEnabled = true;
-    user.twoFactorAttempts = 0;
-    user.twoFactorAttemptsExpires = null;
-    await user.save();
-
-    res.json({
-      message: 'Autenticación de dos factores activada exitosamente',
-      user: {
-        id: user.id,
-        email: user.email,
-        twoFactorEnabled: user.twoFactorEnabled,
-      },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
