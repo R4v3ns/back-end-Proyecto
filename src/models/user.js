@@ -57,12 +57,13 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         defaultValue: JSON.stringify({
           language: 'es',
+          theme: 'light',
+          explicitContent: false, // Contenido explícito (ACC-06)
           notifications: {
             email: true,
             push: true,
             sms: false,
           },
-          theme: 'light',
           timezone: 'America/Mexico_City',
         }),
         get() {

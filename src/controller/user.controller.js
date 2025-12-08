@@ -654,53 +654,183 @@ exports.resendPhoneVerification = async (req, res) => {
   }
 };
 
-// Login
+// Login (ACC-02)
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, phone, password } = req.body;
 
-    const user = await User.findOne({ where: { email } });
-    if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
+    // Validar que se proporcione email o teléfono
+    if (!email && !phone) {
+      return res.status(400).json({ 
+        error: 'Debes proporcionar un correo electrónico o número de teléfono',
+        field: 'email'
+      });
+    }
 
+    // Validar que se proporcione contraseña
+    if (!password) {
+      return res.status(400).json({ 
+        error: 'La contraseña es requerida',
+        field: 'password'
+      });
+    }
+
+    // Buscar usuario por email o teléfono
+    let user;
+    if (email) {
+      // Validar formato de email
+      const emailValidation = validateEmail(email);
+      if (!emailValidation.valid) {
+        return res.status(400).json({
+          error: emailValidation.error,
+          field: 'email',
+        });
+      }
+      user = await User.findOne({ where: { email } });
+    } else if (phone) {
+      // Validar formato de teléfono
+      const phoneValidation = validatePhone(phone);
+      if (!phoneValidation.valid) {
+        return res.status(400).json({
+          error: phoneValidation.error,
+          field: 'phone',
+        });
+      }
+      user = await User.findOne({ where: { phone } });
+    }
+
+    // Verificar si el usuario existe
+    if (!user) {
+      return res.status(401).json({ 
+        error: 'Credenciales inválidas',
+        message: 'No se encontró una cuenta con las credenciales proporcionadas'
+      });
+    }
+
+    // Verificar si la cuenta está activa
+    if (!user.isActive) {
+      return res.status(403).json({ 
+        error: 'Cuenta desactivada',
+        message: 'Tu cuenta ha sido desactivada. Por favor, contacta al soporte.'
+      });
+    }
+
+    // Verificar contraseña
     const valid = await bcrypt.compare(password, user.password);
-    if (!valid) return res.status(401).json({ error: 'Credenciales inválidas' });
+    if (!valid) {
+      return res.status(401).json({ 
+        error: 'Credenciales inválidas',
+        message: 'La contraseña proporcionada es incorrecta',
+        field: 'password'
+      });
+    }
 
     // Actualizar último login
     user.lastLogin = new Date();
     await user.save();
 
+    // Generar token
     const token = generateToken(user);
 
+    // Mensaje de bienvenida
+    const welcomeMessage = user.firstName 
+      ? `¡Bienvenido de nuevo, ${user.firstName}!`
+      : '¡Bienvenido de nuevo!';
+
     res.json({ 
+      message: 'Inicio de sesión exitoso',
+      welcome: welcomeMessage,
       token, 
       user: formatUserResponse(user) 
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Error en login:', err);
+    res.status(500).json({ 
+      error: 'Error al iniciar sesión',
+      message: err.message 
+    });
   }
 };
 
-// Logout (handled client-side by deleting token. Optionally support server-side blacklisting)
+// Logout (ACC-03)
 exports.logout = async (req, res) => {
-  // Assumes stateless JWT auth: client deletes token.
-  res.json({ message: 'Logged out successfully' });
+  try {
+    // El logout es principalmente manejado en el cliente eliminando el token
+    // Sin embargo, podemos registrar el evento si es necesario
+    
+    // Si hay un usuario autenticado (opcional, para logging)
+    if (req.user) {
+      // Aquí podrías registrar el logout en un log o base de datos si es necesario
+      // Por ahora, solo confirmamos el logout
+    }
+
+    res.json({ 
+      message: 'Sesión cerrada exitosamente',
+      success: true
+    });
+  } catch (err) {
+    // Aunque haya un error, confirmamos el logout en el cliente
+    console.error('Error en logout:', err);
+    res.json({ 
+      message: 'Sesión cerrada',
+      success: true,
+      note: 'Si hubo algún problema, por favor elimina el token localmente'
+    });
+  }
 };
 
-// Change Password
+// Change Password (ACC-04)
 exports.changePassword = async (req, res) => {
   try {
     const userId = req.user.id; // req.user populated by authentication middleware
     const { currentPassword, newPassword, passwordConfirmation } = req.body;
 
+    // Validar que se proporcione la contraseña actual
+    if (!currentPassword) {
+      return res.status(400).json({ 
+        error: 'La contraseña actual es requerida',
+        field: 'currentPassword'
+      });
+    }
+
+    // Validar que se proporcione la nueva contraseña
+    if (!newPassword) {
+      return res.status(400).json({ 
+        error: 'La nueva contraseña es requerida',
+        field: 'newPassword'
+      });
+    }
+
+    // Validar que se proporcione la confirmación
+    if (!passwordConfirmation) {
+      return res.status(400).json({ 
+        error: 'La confirmación de contraseña es requerida',
+        field: 'passwordConfirmation'
+      });
+    }
+
     const user = await User.findByPk(userId);
-    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
 
     // Validar contraseña actual
     const valid = await bcrypt.compare(currentPassword, user.password);
     if (!valid) {
       return res.status(401).json({ 
         error: 'La contraseña actual es incorrecta',
+        message: 'La contraseña actual que ingresaste no coincide con la registrada',
         field: 'currentPassword'
+      });
+    }
+
+    // Validar que la nueva contraseña sea diferente a la actual
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      return res.status(400).json({ 
+        error: 'La nueva contraseña debe ser diferente a la actual',
+        message: 'Por favor, elige una contraseña diferente a la que estás usando actualmente',
+        field: 'newPassword'
       });
     }
 
@@ -722,12 +852,20 @@ exports.changePassword = async (req, res) => {
       });
     }
 
+    // Actualizar contraseña
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
 
-    res.json({ message: 'Contraseña cambiada exitosamente' });
+    res.json({ 
+      message: 'Tu contraseña fue actualizada',
+      success: true
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Error al cambiar contraseña:', err);
+    res.status(500).json({ 
+      error: 'Error al cambiar la contraseña',
+      message: err.message 
+    });
   }
 };
 
@@ -755,7 +893,7 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// Update Profile
+// Update Profile (ACC-05)
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user.id; // req.user should be set by auth middleware
@@ -763,13 +901,26 @@ exports.updateProfile = async (req, res) => {
     // Mapear campos del frontend a los del backend
     const updates = {};
     
-    // Manejar username
+    // Manejar username (alias)
     if (req.body.username !== undefined) {
-      console.log('📝 Username recibido:', req.body.username);
-      // Validar que el username no esté vacío si se proporciona
       if (req.body.username && req.body.username.trim()) {
         const trimmedUsername = req.body.username.trim();
-        console.log('📝 Verificando unicidad del username:', trimmedUsername);
+        
+        // Validar longitud mínima del username
+        if (trimmedUsername.length < 3) {
+          return res.status(400).json({ 
+            error: 'El nombre de usuario debe tener al menos 3 caracteres',
+            field: 'username'
+          });
+        }
+        
+        // Validar formato del username (solo letras, números, guiones y guiones bajos)
+        if (!/^[a-zA-Z0-9_-]+$/.test(trimmedUsername)) {
+          return res.status(400).json({ 
+            error: 'El nombre de usuario solo puede contener letras, números, guiones y guiones bajos',
+            field: 'username'
+          });
+        }
         
         // Verificar que el username no esté en uso por otro usuario
         const existingUser = await User.findOne({ 
@@ -780,28 +931,23 @@ exports.updateProfile = async (req, res) => {
         });
         
         if (existingUser) {
-          console.log('❌ Username ya está en uso por:', existingUser.id);
           return res.status(409).json({ 
             error: 'El nombre de usuario ya está en uso',
+            message: 'Este nombre de usuario ya está siendo utilizado por otra cuenta',
             field: 'username'
           });
         }
         
         updates.username = trimmedUsername;
-        console.log('✅ Username válido, se agregará a updates:', trimmedUsername);
       } else {
-        console.log('⚠️ Username vacío o null, se establecerá como null');
         updates.username = null;
       }
-    } else {
-      console.log('ℹ️ Username no está en el body de la petición');
     }
     
-    // Manejar firstName y lastName
+    // Manejar firstName y lastName (nombre)
     // Prioridad: si vienen firstName/lastName directamente, usarlos
     // Si no, pero viene name, dividirlo
     if (req.body.firstName !== undefined || req.body.lastName !== undefined) {
-      // Si vienen firstName o lastName directamente, usarlos (tienen prioridad)
       if (req.body.firstName !== undefined) {
         updates.firstName = req.body.firstName ? req.body.firstName.trim() : null;
       }
@@ -817,54 +963,106 @@ exports.updateProfile = async (req, res) => {
       }
     }
     
-    console.log('📝 firstName/lastName - Request body:', { 
-      firstName: req.body.firstName, 
-      lastName: req.body.lastName, 
-      name: req.body.name 
-    });
-    console.log('📝 firstName/lastName - Updates:', { 
-      firstName: updates.firstName, 
-      lastName: updates.lastName 
-    });
-    
     // Mapear biography -> bio
     if (req.body.biography !== undefined) {
-      updates.bio = req.body.biography;
+      updates.bio = req.body.biography ? req.body.biography.trim() : null;
     }
     if (req.body.bio !== undefined) {
-      updates.bio = req.body.bio;
+      updates.bio = req.body.bio ? req.body.bio.trim() : null;
     }
     
     // Mapear birthDate -> dateOfBirth
     if (req.body.birthDate !== undefined) {
-      updates.dateOfBirth = req.body.birthDate;
+      if (req.body.birthDate) {
+        const birthDate = new Date(req.body.birthDate);
+        if (isNaN(birthDate.getTime())) {
+          return res.status(400).json({ 
+            error: 'La fecha de nacimiento no es válida',
+            field: 'birthDate'
+          });
+        }
+        // Validar que no sea una fecha futura
+        if (birthDate > new Date()) {
+          return res.status(400).json({ 
+            error: 'La fecha de nacimiento no puede ser una fecha futura',
+            field: 'birthDate'
+          });
+        }
+        updates.dateOfBirth = birthDate;
+      } else {
+        updates.dateOfBirth = null;
+      }
     }
     if (req.body.dateOfBirth !== undefined) {
-      updates.dateOfBirth = req.body.dateOfBirth;
+      if (req.body.dateOfBirth) {
+        const birthDate = new Date(req.body.dateOfBirth);
+        if (isNaN(birthDate.getTime())) {
+          return res.status(400).json({ 
+            error: 'La fecha de nacimiento no es válida',
+            field: 'dateOfBirth'
+          });
+        }
+        if (birthDate > new Date()) {
+          return res.status(400).json({ 
+            error: 'La fecha de nacimiento no puede ser una fecha futura',
+            field: 'dateOfBirth'
+          });
+        }
+        updates.dateOfBirth = birthDate;
+      } else {
+        updates.dateOfBirth = null;
+      }
     }
     
-    // Mapear profileImage -> avatar
+    // Mapear profileImage -> avatar (foto)
     if (req.body.profileImage !== undefined) {
-      updates.avatar = req.body.profileImage;
+      updates.avatar = req.body.profileImage || null;
     }
     if (req.body.avatar !== undefined) {
-      updates.avatar = req.body.avatar;
+      updates.avatar = req.body.avatar || null;
     }
     
-    // Campos directos
-    if (req.body.phone !== undefined) updates.phone = req.body.phone;
+    // Validar teléfono si se proporciona
+    if (req.body.phone !== undefined) {
+      if (req.body.phone) {
+        const phoneValidation = validatePhone(req.body.phone);
+        if (!phoneValidation.valid) {
+          return res.status(400).json({
+            error: phoneValidation.error,
+            field: 'phone',
+          });
+        }
+        
+        // Verificar que el teléfono no esté en uso por otro usuario
+        const existingUser = await User.findOne({ 
+          where: { 
+            phone: req.body.phone,
+            id: { [require('sequelize').Op.ne]: userId }
+          } 
+        });
+        
+        if (existingUser) {
+          return res.status(409).json({ 
+            error: 'Este número de teléfono ya está asociado a otra cuenta',
+            field: 'phone'
+          });
+        }
+      }
+      updates.phone = req.body.phone || null;
+    }
     
-    // Log para debugging
-    console.log('📝 Update Profile - User ID:', userId);
-    console.log('📝 Update Profile - Request body:', { ...req.body, password: req.body.password ? '***' : undefined });
-    console.log('📝 Update Profile - Updates to apply:', updates);
+    // Si no hay actualizaciones, retornar error
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ 
+        error: 'No se proporcionaron campos para actualizar',
+        message: 'Debes proporcionar al menos un campo para actualizar tu perfil'
+      });
+    }
     
-    // SQLite no soporta 'returning: true', así que actualizamos y luego buscamos
+    // Actualizar usuario
     const [affectedRows] = await User.update(updates, {
       where: { id: userId }
     });
-    
-    console.log('📝 Update Profile - Affected rows:', affectedRows);
 
     if (affectedRows === 0) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -885,49 +1083,199 @@ exports.updateProfile = async (req, res) => {
       user: formattedUser // También incluir en objeto user
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({ 
+        error: 'Uno de los campos que intentas actualizar ya está en uso',
+        message: err.message
+      });
+    }
+    console.error('Error al actualizar perfil:', err);
+    res.status(500).json({ 
+      error: 'Error al actualizar el perfil',
+      message: err.message 
+    });
   }
 };
 
-// Update Preferences
+// Update Preferences (ACC-06)
 exports.updatePreferences = async (req, res) => {
   try {
     const userId = req.user.id;
     let user = await User.findByPk(userId);
 
-    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
 
+    console.log('📝 Update Preferences - Request body:', req.body);
+
+    // Aceptar datos directamente en el body o dentro de un objeto 'preferences'
+    const updateData = req.body.preferences || req.body;
+
+    // Verificar que se hayan proporcionado datos para actualizar
+    // Permitir valores null/empty string para resetear valores
+    const hasUpdates = 'language' in updateData || 
+                      'theme' in updateData || 
+                      'explicitContent' in updateData ||
+                      'notifications' in updateData ||
+                      'timezone' in updateData;
+
+    if (!hasUpdates) {
+      return res.status(400).json({ 
+        error: 'No se proporcionaron datos para actualizar',
+        message: 'Debes proporcionar al menos un campo para actualizar (language, theme, explicitContent, notifications, timezone)'
+      });
+    }
+
+    // Obtener preferencias actuales usando getDataValue para obtener el string raw
     let preferences = {};
-    if (user.preferences) {
+    const rawPreferences = user.getDataValue('preferences');
+    
+    if (rawPreferences) {
       try {
-        preferences = typeof user.preferences === 'string' 
-          ? JSON.parse(user.preferences) 
-          : user.preferences;
-      } catch (_) {
-        preferences = {};
+        preferences = typeof rawPreferences === 'string' 
+          ? JSON.parse(rawPreferences) 
+          : rawPreferences;
+      } catch (parseError) {
+        console.error('Error al parsear preferencias:', parseError);
+        preferences = {
+          language: 'es',
+          theme: 'light',
+          explicitContent: false,
+          notifications: {
+            email: true,
+            push: true,
+            sms: false,
+          },
+          timezone: 'America/Mexico_City',
+        };
+      }
+    } else {
+      // Preferencias por defecto si no existen
+      preferences = {
+        language: 'es',
+        theme: 'light',
+        explicitContent: false,
+        notifications: {
+          email: true,
+          push: true,
+          sms: false,
+        },
+        timezone: 'America/Mexico_City',
+      };
+    }
+
+    console.log('📝 Preferencias actuales:', preferences);
+    console.log('📝 Datos recibidos para actualizar:', updateData);
+
+    // Validar y actualizar idioma
+    const validLanguages = ['es', 'en', 'fr', 'pt', 'de', 'it'];
+    if ('language' in updateData) {
+      if (updateData.language !== null && updateData.language !== undefined && updateData.language !== '') {
+        const languageValue = String(updateData.language).trim().toLowerCase();
+        console.log('🔍 Validando idioma:', languageValue, 'Valores válidos:', validLanguages);
+        if (validLanguages.includes(languageValue)) {
+          preferences.language = languageValue;
+          console.log('✅ Idioma actualizado a:', languageValue);
+        } else {
+          console.log('❌ Idioma no válido:', languageValue);
+          return res.status(400).json({ 
+            error: 'Idioma no válido',
+            message: `El idioma debe ser uno de: ${validLanguages.join(', ')}`,
+            field: 'language',
+            received: languageValue
+          });
+        }
       }
     }
-    preferences = { ...preferences, ...req.body };
 
-    user.preferences = preferences;
+    // Validar y actualizar tema
+    const validThemes = ['light', 'dark', 'auto'];
+    if ('theme' in updateData) {
+      if (updateData.theme !== null && updateData.theme !== undefined && updateData.theme !== '') {
+        const themeValue = String(updateData.theme).trim().toLowerCase();
+        console.log('🔍 Validando tema:', themeValue, 'Valores válidos:', validThemes);
+        if (validThemes.includes(themeValue)) {
+          preferences.theme = themeValue;
+          console.log('✅ Tema actualizado a:', themeValue);
+        } else {
+          console.log('❌ Tema no válido:', themeValue);
+          return res.status(400).json({ 
+            error: 'Tema no válido',
+            message: `El tema debe ser uno de: ${validThemes.join(', ')}`,
+            field: 'theme',
+            received: themeValue
+          });
+        }
+      }
+    }
+
+    // Actualizar contenido explícito
+    if (updateData.explicitContent !== undefined) {
+      preferences.explicitContent = updateData.explicitContent === true || updateData.explicitContent === 'true' || updateData.explicitContent === 1;
+      console.log('✅ Contenido explícito actualizado a:', preferences.explicitContent);
+    }
+
+    // Actualizar notificaciones
+    if (updateData.notifications !== undefined) {
+      preferences.notifications = {
+        ...preferences.notifications,
+        ...updateData.notifications
+      };
+      console.log('✅ Notificaciones actualizadas');
+    }
+
+    // Actualizar timezone
+    if (updateData.timezone !== undefined) {
+      preferences.timezone = updateData.timezone;
+      console.log('✅ Timezone actualizado a:', updateData.timezone);
+    }
+
+    console.log('📝 Preferencias finales a guardar:', preferences);
+
+    // Guardar preferencias directamente como string JSON usando setDataValue
+    // Esto evita problemas con el setter/getter del modelo
+    const preferencesString = JSON.stringify(preferences);
+    console.log('📝 String JSON a guardar:', preferencesString);
+    
+    user.setDataValue('preferences', preferencesString);
     await user.save();
+
+    // Verificar que se guardó correctamente
+    const savedRaw = user.getDataValue('preferences');
+    console.log('📝 Verificación - Raw guardado:', savedRaw);
+    
+    // Recargar el usuario desde la base de datos para obtener las preferencias parseadas
+    await user.reload();
+    
+    // Obtener preferencias parseadas
+    const savedPreferences = user.preferences;
+    console.log('✅ Preferencias guardadas exitosamente');
+    console.log('📝 Preferencias después de guardar:', savedPreferences);
 
     res.json({ 
       message: 'Preferencias actualizadas exitosamente',
       preferences: user.preferences 
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('❌ Error al actualizar preferencias:', err);
+    res.status(500).json({ 
+      error: 'Error al actualizar las preferencias',
+      message: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 };
 
-// Get Preferences
+// Get Preferences (ACC-06)
 exports.getPreferences = async (req, res) => {
   try {
     const userId = req.user.id;
     let user = await User.findByPk(userId);
 
-    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
 
     let preferences = {};
     if (user.preferences) {
@@ -936,65 +1284,197 @@ exports.getPreferences = async (req, res) => {
           ? JSON.parse(user.preferences) 
           : user.preferences;
       } catch (_) {
-        preferences = {};
+        // Si hay error al parsear, usar preferencias por defecto
+        preferences = {
+          language: 'es',
+          theme: 'light',
+          explicitContent: false,
+          notifications: {
+            email: true,
+            push: true,
+            sms: false,
+          },
+          timezone: 'America/Mexico_City',
+        };
       }
+    } else {
+      // Preferencias por defecto si no existen
+      preferences = {
+        language: 'es',
+        theme: 'light',
+        explicitContent: false,
+        notifications: {
+          email: true,
+          push: true,
+          sms: false,
+        },
+        timezone: 'America/Mexico_City',
+      };
     }
 
     res.json({ preferences });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Error al obtener preferencias:', err);
+    res.status(500).json({ 
+      error: 'Error al obtener las preferencias',
+      message: err.message 
+    });
   }
 };
 
-// Manage Plan fields: subscribe, cancel, get plan (optional, mock; expand as needed)
+// Get Plan (ACC-07)
 exports.getPlan = async (req, res) => {
   try {
     const userId = req.user.id;
     let user = await User.findByPk(userId);
 
-    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    // Calcular días restantes si hay fecha de fin
+    let daysRemaining = null;
+    if (user.planEndDate) {
+      const now = new Date();
+      const endDate = new Date(user.planEndDate);
+      const diffTime = endDate - now;
+      daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (daysRemaining < 0) daysRemaining = 0;
+    }
 
     res.json({ 
-      plan: user.plan || null,
+      plan: user.plan || 'free',
       planStartDate: user.planStartDate,
       planEndDate: user.planEndDate,
-      planStatus: user.planStatus
+      planStatus: user.planStatus || 'active',
+      daysRemaining: daysRemaining
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Error al obtener plan:', err);
+    res.status(500).json({ 
+      error: 'Error al obtener el plan',
+      message: err.message 
+    });
   }
 };
 
+// Update Plan (ACC-07) - Mejorar, cambiar o cancelar plan
 exports.updatePlan = async (req, res) => {
   try {
     const userId = req.user.id;
     let user = await User.findByPk(userId);
 
-    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
 
-    if (req.body.plan) {
-      user.plan = req.body.plan;
-    }
-    if (req.body.planStatus) {
-      user.planStatus = req.body.planStatus;
-    }
-    if (req.body.planStartDate) {
-      user.planStartDate = req.body.planStartDate;
-    }
-    if (req.body.planEndDate) {
-      user.planEndDate = req.body.planEndDate;
-    }
-    
-    await user.save();
+    const { plan, action } = req.body;
 
-    res.json({ 
-      message: 'Plan actualizado exitosamente',
-      plan: user.plan,
-      planStartDate: user.planStartDate,
-      planEndDate: user.planEndDate,
-      planStatus: user.planStatus
-    });
+    // Validar planes disponibles
+    const validPlans = ['free', 'premium', 'family', 'student'];
+    if (plan && !validPlans.includes(plan)) {
+      return res.status(400).json({ 
+        error: 'Plan no válido',
+        message: `El plan debe ser uno de: ${validPlans.join(', ')}`,
+        field: 'plan'
+      });
+    }
+
+    // Validar acciones
+    const validActions = ['upgrade', 'downgrade', 'cancel', 'change'];
+    if (action && !validActions.includes(action)) {
+      return res.status(400).json({ 
+        error: 'Acción no válida',
+        message: `La acción debe ser una de: ${validActions.join(', ')}`,
+        field: 'action'
+      });
+    }
+
+    // Procesar según la acción
+    if (action === 'cancel') {
+      // Cancelar plan (cambiar a free al finalizar el período actual)
+      user.planStatus = 'cancelled';
+      await user.save();
+      // El plan seguirá activo hasta la fecha de fin
+      res.json({ 
+        message: 'Plan cancelado exitosamente. Tu plan actual permanecerá activo hasta la fecha de finalización.',
+        plan: user.plan,
+        planStatus: user.planStatus,
+        planEndDate: user.planEndDate,
+        note: 'Tu plan se cancelará al finalizar el período actual'
+      });
+    } else if (action === 'upgrade' || action === 'change') {
+      // Mejorar o cambiar plan
+      if (!plan) {
+        return res.status(400).json({ 
+          error: 'Plan requerido',
+          message: 'Debes especificar el plan al que deseas cambiar',
+          field: 'plan'
+        });
+      }
+
+      const currentPlan = user.plan || 'free';
+      const planHierarchy = { free: 0, student: 1, premium: 2, family: 3 };
+      
+      // Verificar si es una mejora válida
+      if (action === 'upgrade' && planHierarchy[plan] <= planHierarchy[currentPlan]) {
+        return res.status(400).json({ 
+          error: 'No es una mejora válida',
+          message: `El plan ${plan} no es una mejora sobre tu plan actual ${currentPlan}`,
+          field: 'plan'
+        });
+      }
+
+      // Actualizar plan
+      user.plan = plan;
+      user.planStatus = 'active';
+      user.planStartDate = new Date();
+      
+      // Calcular fecha de fin (1 año por defecto)
+      const endDate = new Date();
+      endDate.setFullYear(endDate.getFullYear() + 1);
+      user.planEndDate = endDate;
+
+      await user.save();
+
+      res.json({ 
+        message: action === 'upgrade' ? 'Plan mejorado exitosamente' : 'Plan cambiado exitosamente',
+        plan: user.plan,
+        planStartDate: user.planStartDate,
+        planEndDate: user.planEndDate,
+        planStatus: user.planStatus
+      });
+    } else if (plan) {
+      // Si solo se proporciona el plan sin acción, actualizar directamente
+      user.plan = plan;
+      user.planStatus = req.body.planStatus || 'active';
+      if (req.body.planStartDate) {
+        user.planStartDate = new Date(req.body.planStartDate);
+      }
+      if (req.body.planEndDate) {
+        user.planEndDate = new Date(req.body.planEndDate);
+      }
+      
+      await user.save();
+
+      res.json({ 
+        message: 'Plan actualizado exitosamente',
+        plan: user.plan,
+        planStartDate: user.planStartDate,
+        planEndDate: user.planEndDate,
+        planStatus: user.planStatus
+      });
+    } else {
+      return res.status(400).json({ 
+        error: 'Datos insuficientes',
+        message: 'Debes proporcionar un plan o una acción válida'
+      });
+    }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Error al actualizar plan:', err);
+    res.status(500).json({ 
+      error: 'Error al actualizar el plan',
+      message: err.message 
+    });
   }
 };

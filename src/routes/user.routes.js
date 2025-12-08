@@ -17,11 +17,12 @@ router.post('/resend-email-verification', userController.resendEmailVerification
 router.post('/verify-phone', userController.verifyPhone);
 router.post('/resend-phone-verification', userController.resendPhoneVerification);
 
-// Login y logout
+// Login (público)
 router.post('/login', userController.login);
-router.post('/logout', userController.logout);
 
 // Rutas protegidas (requieren autenticación)
+// Logout (ACC-03: debe estar en Perfil o Configuración, requiere autenticación)
+router.post('/logout', authenticate, userController.logout);
 // Gestión de cuenta
 router.get('/me', authenticate, userController.getProfile); // Alias común para obtener perfil
 router.get('/profile', authenticate, userController.getProfile);
