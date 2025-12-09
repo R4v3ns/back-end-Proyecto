@@ -18,6 +18,14 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
       },
+      album: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      genre: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
       duration: {
         type: DataTypes.INTEGER, // en segundos
         allowNull: false,
@@ -29,6 +37,19 @@ module.exports = (sequelize, DataTypes) => {
       audioUrl: {
         type: DataTypes.STRING,
         allowNull: false,
+      },
+      // Campos para exploración y destacados
+      isFeatured: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+      },
+      playCount: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+      },
+      releaseDate: {
+        type: DataTypes.DATE,
+        allowNull: true,
       },
     },
     {
