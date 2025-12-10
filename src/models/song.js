@@ -60,5 +60,19 @@ module.exports = (sequelize, DataTypes) => {
     }
   );
 
+  Song.associate = function(models) {
+    // Relación many-to-many con Playlist usando la tabla playlist_songs
+    Song.belongsToMany(models.Playlist, {
+      through: 'playlist_songs',
+      foreignKey: 'songId',
+      otherKey: 'playlistId',
+      as: 'playlists',
+    });
+    Song.hasMany(models.Like, {
+      foreignKey: 'songId',
+      as: 'likes',
+    });
+  };
+
   return Song;
 };

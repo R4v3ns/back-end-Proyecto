@@ -31,7 +31,8 @@
     "nodemon": "^3.1.10",
     "sequelize": "^6.37.7",
     "sequelize-cli": "^6.6.3",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "yt-dlp-wrap": "^2.3.12"
   },
   "devDependencies": {
     "morgan": "^1.10.1"

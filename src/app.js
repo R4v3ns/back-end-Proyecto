@@ -51,11 +51,36 @@ app.get('/', (req, res) => {
   });
 });
 
+// Endpoint de configuración para el frontend
+app.get('/api/config', (req, res) => {
+  const host = req.get('host') || 'localhost:8080';
+  const protocol = req.get('x-forwarded-proto') || req.protocol || 'http';
+  const baseUrl = `${protocol}://${host}`;
+  
+  res.json({
+    ok: true,
+    apiBaseUrl: baseUrl,
+    endpoints: {
+      users: `${baseUrl}/api/users`,
+      songs: `${baseUrl}/songs`,
+      library: `${baseUrl}/api/library`,
+      youtube: `${baseUrl}/api/youtube`,
+      uploads: `${baseUrl}/uploads`
+    },
+    version: '1.0.0'
+  });
+});
+
 // Rutas de la API
 const userRoutes = require('./routes/user.routes');
 const songRoutes = require('./routes/song.routes');
+const libraryRoutes = require('./routes/library.routes');
+const youtubeRoutes = require('./routes/youtube.routes');
+
 app.use('/api/users', userRoutes);
 app.use('/songs', songRoutes); // El frontend espera /songs, no /api/songs
+app.use('/api/library', libraryRoutes); // Módulo de biblioteca (playlists y likes)
+app.use('/api/youtube', youtubeRoutes); // Conversión de YouTube a audio
 
 // Manejo de rutas no encontradas
 app.use((req, res) => {

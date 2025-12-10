@@ -12,11 +12,14 @@ router.get('/albums/popular', songController.getPopularAlbums); // Álbumes popu
 // CAT-02: Búsqueda
 router.get('/search', songController.search); // Búsqueda general
 
+// YouTube audio conversion
+router.get('/youtube/:youtubeId', songController.getYouTubeAudio); // Convertir YouTube a audio
+
 // CAT-03: Ver detalles
 router.get('/artist/:artistName', songController.getArtistDetails); // Detalles de artista
 router.get('/album/:albumName', songController.getAlbumDetails); // Detalles de álbum
 
-// Rutas básicas (mantener compatibilidad)
+// Rutas básicas (mantener compatibilidad) - DEBEN IR AL FINAL para evitar conflictos
 router.get('/', songController.getAllSongs); // Todas las canciones
 router.get('/:id', songController.getSongById); // Canción por ID
 

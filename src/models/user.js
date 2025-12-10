@@ -157,5 +157,20 @@ module.exports = (sequelize, DataTypes) => {
     }
   );
 
+  User.associate = function(models) {
+    User.hasMany(models.Playlist, {
+      foreignKey: 'userId',
+      as: 'playlists',
+    });
+    User.hasMany(models.Like, {
+      foreignKey: 'userId',
+      as: 'likes',
+    });
+    User.hasOne(models.Queue, {
+      foreignKey: 'userId',
+      as: 'queue',
+    });
+  };
+
   return User;
 };

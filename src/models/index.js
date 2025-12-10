@@ -29,6 +29,11 @@ fs
   .forEach(file => {
     const model = require(path.join(__dirname, file))(sequelize, Sequelize.DataTypes);
     db[model.name] = model;
+    
+    // Registrar modelos anidados (ej: PodcastEpisode dentro de Podcast)
+    if (model.PodcastEpisode) {
+      db.PodcastEpisode = model.PodcastEpisode;
+    }
   });
 
 Object.keys(db).forEach(modelName => {

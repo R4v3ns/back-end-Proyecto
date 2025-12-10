@@ -26,7 +26,9 @@ router.post('/logout', authenticate, userController.logout);
 // Gestión de cuenta
 router.get('/me', authenticate, userController.getProfile); // Alias común para obtener perfil
 router.get('/profile', authenticate, userController.getProfile);
+router.get('/profile-settings', authenticate, userController.getProfile); // Alias para compatibilidad con frontend
 router.put('/profile', authenticate, userController.updateProfile);
+router.put('/profile-settings', authenticate, userController.updateProfile); // Alias para compatibilidad con frontend
 router.post('/change-password', authenticate, userController.changePassword);
 router.get('/preferences', authenticate, userController.getPreferences);
 router.put('/preferences', authenticate, userController.updatePreferences);

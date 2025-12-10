@@ -32,6 +32,7 @@ API REST desarrollada con Node.js y Express para la gestión de usuarios y canci
 - Node.js (v14 o superior)
 - npm
 - Base de datos SQLite (incluida en el proyecto)
+- yt-dlp (opcional, se descarga automáticamente con yt-dlp-wrap)
 
 ## Instalación
 
@@ -128,6 +129,12 @@ npm start
 - `GET /uploads/audio/:filename` - Acceder a archivos de audio
 - `GET /uploads/images/:filename` - Acceder a imágenes
 
+### Configuración
+
+- `GET /api/config` - Obtener configuración del API (URLs base y endpoints)
+  - Retorna: URLs base del API y todos los endpoints disponibles
+  - Útil para el frontend para detectar automáticamente la URL del backend
+
 ## Autenticación
 
 Todas las rutas protegidas requieren enviar el token JWT en el encabezado `Authorization` con el formato:
@@ -178,6 +185,7 @@ back-end-Proyecto/
 - express-validator - Validación de datos
 - cors - Configuración CORS
 - morgan - Logger HTTP
+- yt-dlp-wrap - Conversión de YouTube a audio
 
 ## Scripts Disponibles
 
