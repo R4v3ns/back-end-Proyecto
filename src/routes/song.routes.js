@@ -6,6 +6,7 @@ const songController = require('../controller/song.controller');
 router.get('/featured', songController.getFeaturedSongs); // Canciones destacadas
 router.get('/popular', songController.getPopularSongs); // Canciones populares
 router.get('/recent', songController.getRecentSongs); // Canciones recientes
+router.get('/podcasts', songController.getPodcasts); // Podcasts (canciones con isExample: true)
 router.get('/artists/popular', songController.getPopularArtists); // Artistas populares
 router.get('/albums/popular', songController.getPopularAlbums); // Álbumes populares
 

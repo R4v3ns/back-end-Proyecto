@@ -3,6 +3,9 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
+    // Este seeder está deshabilitado - las canciones se manejan en 20251121153000-demo-songs.js
+    return;
+    /* Deshabilitado
     await queryInterface.bulkInsert('songs', [
       {
         title: 'Pasajero',
@@ -59,6 +62,7 @@ module.exports = {
         updatedAt: new Date(),
       },
     ], {});
+    */
   },
 
   async down(queryInterface, Sequelize) {

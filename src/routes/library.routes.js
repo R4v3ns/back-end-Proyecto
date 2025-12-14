@@ -24,6 +24,12 @@ router.delete('/likes/:songId', libraryController.unlikeSong); // Quitar like
 router.get('/likes/:songId', libraryController.checkLike); // Verificar like
 router.get('/likes', libraryController.getLikedSongs); // Obtener canciones con like
 
+// Rutas alternativas para compatibilidad con frontend
+router.post('/liked-songs/:songId', libraryController.likeSongById); // Dar like por ID en URL
+router.post('/liked-songs', libraryController.likeSong); // Dar like (con songId en body)
+router.delete('/liked-songs/:songId', libraryController.unlikeSong); // Quitar like (ya existe, pero con ruta alternativa)
+router.get('/liked-songs', libraryController.getLikedSongs); // Obtener canciones con like (alias)
+
 module.exports = router;
 
 

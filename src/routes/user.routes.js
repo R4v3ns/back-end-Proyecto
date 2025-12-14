@@ -35,5 +35,23 @@ router.put('/preferences', authenticate, userController.updatePreferences);
 router.get('/plan', authenticate, userController.getPlan);
 router.put('/plan', authenticate, userController.updatePlan);
 
+// Rutas de likes (alias para compatibilidad con frontend)
+// Estas rutas redirigen al controlador de library
+const libraryController = require('../controller/library.controller');
+router.post('/liked-songs/:songId', authenticate, libraryController.likeSongById);
+router.post('/liked-songs', authenticate, (req, res) => {
+  // Si viene songId en el body, usar likeSong, si no, error
+  if (!req.body.songId) {
+    return res.status(400).json({
+      ok: false,
+      error: 'El ID de la canción es requerido',
+      field: 'songId'
+    });
+  }
+  libraryController.likeSong(req, res);
+});
+router.delete('/liked-songs/:songId', authenticate, libraryController.unlikeSong);
+router.get('/liked-songs', authenticate, libraryController.getLikedSongs);
+
 module.exports = router;
 
