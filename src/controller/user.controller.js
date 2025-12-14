@@ -1,4 +1,4 @@
-const { User } = require('../models');
+const { User, sequelize } = require('../models');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -369,10 +369,6 @@ exports.registerWithPhone = async (req, res) => {
       phoneVerificationTokenExpires,
     });
 
-    // TODO: Enviar SMS con código de verificación (implementar servicio de SMS)
-    // Por ahora, retornamos el código en la respuesta (solo para desarrollo)
-    // En producción, esto NO debe enviarse en la respuesta
-
     // Construir mensaje de bienvenida
     const welcomeMessage = user.firstName 
       ? `¡Bienvenido, ${user.firstName}! Tu cuenta ha sido creada exitosamente.`
@@ -659,6 +655,8 @@ exports.login = async (req, res) => {
   try {
     const { email, phone, password } = req.body;
 
+    console.log('🔐 Intento de login - Email:', email ? 'proporcionado' : 'no proporcionado', 'Phone:', phone ? 'proporcionado' : 'no proporcionado');
+
     // Validar que se proporcione email o teléfono
     if (!email && !phone) {
       return res.status(400).json({ 
@@ -677,47 +675,81 @@ exports.login = async (req, res) => {
 
     // Buscar usuario por email o teléfono
     let user;
-    if (email) {
-      // Validar formato de email
-      const emailValidation = validateEmail(email);
-      if (!emailValidation.valid) {
-        return res.status(400).json({
-          error: emailValidation.error,
-          field: 'email',
-        });
+    try {
+      if (email) {
+        // Validar formato de email
+        const emailValidation = validateEmail(email);
+        if (!emailValidation.valid) {
+          return res.status(400).json({
+            error: emailValidation.error,
+            field: 'email',
+          });
+        }
+        console.log('🔍 Buscando usuario por email:', email);
+        user = await User.findOne({ where: { email } });
+      } else if (phone) {
+        // Validar formato de teléfono
+        const phoneValidation = validatePhone(phone);
+        if (!phoneValidation.valid) {
+          return res.status(400).json({
+            error: phoneValidation.error,
+            field: 'phone',
+          });
+        }
+        console.log('🔍 Buscando usuario por teléfono:', phone);
+        user = await User.findOne({ where: { phone } });
       }
-      user = await User.findOne({ where: { email } });
-    } else if (phone) {
-      // Validar formato de teléfono
-      const phoneValidation = validatePhone(phone);
-      if (!phoneValidation.valid) {
-        return res.status(400).json({
-          error: phoneValidation.error,
-          field: 'phone',
-        });
-      }
-      user = await User.findOne({ where: { phone } });
+    } catch (dbError) {
+      console.error('❌ Error al buscar usuario en la base de datos:', dbError);
+      return res.status(500).json({ 
+        error: 'Error al buscar usuario',
+        message: 'Ocurrió un error al consultar la base de datos'
+      });
     }
 
     // Verificar si el usuario existe
     if (!user) {
+      console.log('❌ Usuario no encontrado');
       return res.status(401).json({ 
         error: 'Credenciales inválidas',
         message: 'No se encontró una cuenta con las credenciales proporcionadas'
       });
     }
 
+    console.log('✅ Usuario encontrado - ID:', user.id, 'Email:', user.email, 'Phone:', user.phone);
+
     // Verificar si la cuenta está activa
     if (!user.isActive) {
+      console.log('❌ Cuenta desactivada');
       return res.status(403).json({ 
         error: 'Cuenta desactivada',
         message: 'Tu cuenta ha sido desactivada. Por favor, contacta al soporte.'
       });
     }
 
+    // Verificar que el usuario tenga contraseña
+    if (!user.password) {
+      console.error('❌ Usuario sin contraseña - ID:', user.id);
+      return res.status(500).json({ 
+        error: 'Error en la configuración de la cuenta',
+        message: 'La cuenta no tiene una contraseña configurada. Por favor, contacta al soporte.'
+      });
+    }
+
     // Verificar contraseña
-    const valid = await bcrypt.compare(password, user.password);
+    let valid;
+    try {
+      valid = await bcrypt.compare(password, user.password);
+    } catch (bcryptError) {
+      console.error('❌ Error al comparar contraseña:', bcryptError);
+      return res.status(500).json({ 
+        error: 'Error al verificar la contraseña',
+        message: 'Ocurrió un error al procesar la autenticación'
+      });
+    }
+
     if (!valid) {
+      console.log('❌ Contraseña incorrecta');
       return res.status(401).json({ 
         error: 'Credenciales inválidas',
         message: 'La contraseña proporcionada es incorrecta',
@@ -725,29 +757,68 @@ exports.login = async (req, res) => {
       });
     }
 
+    console.log('✅ Contraseña válida');
+
     // Actualizar último login
-    user.lastLogin = new Date();
-    await user.save();
+    try {
+      user.lastLogin = new Date();
+      await user.save();
+      console.log('✅ Último login actualizado');
+    } catch (saveError) {
+      console.error('⚠️ Error al actualizar último login (continuando):', saveError);
+      // No bloqueamos el login si falla actualizar el último login
+    }
 
     // Generar token
-    const token = generateToken(user);
+    let token;
+    try {
+      token = generateToken(user);
+      console.log('✅ Token generado');
+    } catch (tokenError) {
+      console.error('❌ Error al generar token:', tokenError);
+      return res.status(500).json({ 
+        error: 'Error al generar token de autenticación',
+        message: 'Ocurrió un error al crear la sesión'
+      });
+    }
+
+    // Formatear respuesta del usuario
+    let formattedUser;
+    try {
+      formattedUser = formatUserResponse(user);
+      console.log('✅ Usuario formateado');
+    } catch (formatError) {
+      console.error('❌ Error al formatear usuario:', formatError);
+      // Si falla el formateo, devolvemos datos básicos
+      formattedUser = {
+        id: user.id,
+        email: user.email,
+        phone: user.phone,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      };
+    }
 
     // Mensaje de bienvenida
     const welcomeMessage = user.firstName 
       ? `¡Bienvenido de nuevo, ${user.firstName}!`
       : '¡Bienvenido de nuevo!';
 
+    console.log('✅ Login exitoso para usuario:', user.id);
+
     res.json({ 
       message: 'Inicio de sesión exitoso',
       welcome: welcomeMessage,
       token, 
-      user: formatUserResponse(user) 
+      user: formattedUser 
     });
   } catch (err) {
-    console.error('Error en login:', err);
+    console.error('❌ Error inesperado en login:', err);
+    console.error('Stack trace:', err.stack);
     res.status(500).json({ 
       error: 'Error al iniciar sesión',
-      message: err.message 
+      message: err.message || 'Ocurrió un error inesperado',
+      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
     });
   }
 };
@@ -897,6 +968,9 @@ exports.getProfile = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user.id; // req.user should be set by auth middleware
+    
+    console.log('📝 Update Profile - User ID:', userId);
+    console.log('📝 Update Profile - Request body:', JSON.stringify(req.body, null, 2));
     
     // Mapear campos del frontend a los del backend
     const updates = {};
@@ -1053,32 +1127,143 @@ exports.updateProfile = async (req, res) => {
     
     // Si no hay actualizaciones, retornar error
     if (Object.keys(updates).length === 0) {
+      console.log('❌ No hay campos para actualizar');
       return res.status(400).json({ 
         error: 'No se proporcionaron campos para actualizar',
         message: 'Debes proporcionar al menos un campo para actualizar tu perfil'
       });
     }
     
-    // Actualizar usuario
-    const [affectedRows] = await User.update(updates, {
-      where: { id: userId }
-    });
-
-    if (affectedRows === 0) {
+    console.log('📝 Campos a actualizar:', JSON.stringify(updates, null, 2));
+    
+    // Obtener el usuario antes de actualizar
+    const userBefore = await User.findByPk(userId);
+    if (!userBefore) {
+      console.log('❌ Usuario no encontrado antes de actualizar');
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
+    
+    console.log('📝 Usuario antes de actualizar:', {
+      firstName: userBefore.firstName,
+      lastName: userBefore.lastName,
+      username: userBefore.username,
+      bio: userBefore.bio,
+      dateOfBirth: userBefore.dateOfBirth,
+      phone: userBefore.phone,
+      avatar: userBefore.avatar
+    });
+    
+    // Actualizar usuario usando update
+    let updateSuccess = false;
+    try {
+      const [affectedRows] = await User.update(updates, {
+        where: { id: userId }
+      });
+      
+      console.log('✅ Filas afectadas por update:', affectedRows);
+      
+      if (affectedRows > 0) {
+        updateSuccess = true;
+        console.log('✅ Usuario actualizado exitosamente usando update()');
+      } else {
+        console.log('⚠️ No se actualizaron filas con update(), intentando con save()');
+        // Si update no funciona, intentar con save()
+        Object.assign(userBefore, updates);
+        await userBefore.save();
+        updateSuccess = true;
+        console.log('✅ Usuario actualizado usando save()');
+      }
+    } catch (updateError) {
+      console.error('❌ Error al actualizar con update():', updateError);
+      // Intentar con save() como alternativa
+      try {
+        Object.assign(userBefore, updates);
+        await userBefore.save();
+        updateSuccess = true;
+        console.log('✅ Usuario actualizado usando save() después de error en update()');
+      } catch (saveError) {
+        console.error('❌ Error al actualizar con save():', saveError);
+        throw saveError;
+      }
+    }
 
-    // Obtener el usuario actualizado
+    if (!updateSuccess) {
+      return res.status(500).json({
+        error: 'Error al actualizar el perfil',
+        message: 'No se pudieron guardar los cambios en la base de datos'
+      });
+    }
+
+    // Obtener el usuario actualizado (forzar recarga desde la BD)
     const user = await User.findByPk(userId);
     if (!user) {
-      return res.status(404).json({ error: 'Usuario no encontrado' });
+      console.log('❌ Usuario no encontrado después de actualizar');
+      return res.status(404).json({ 
+        error: 'Usuario no encontrado',
+        message: 'No se pudo verificar que los cambios se guardaron correctamente'
+      });
+    }
+    
+    // Recargar el usuario para asegurar que tenemos los datos más recientes
+    await user.reload();
+    
+    console.log('✅ Usuario después de actualizar:', {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      username: user.username,
+      bio: user.bio,
+      dateOfBirth: user.dateOfBirth,
+      phone: user.phone,
+      avatar: user.avatar
+    });
+
+    // Verificar que los cambios se aplicaron correctamente
+    const changesApplied = Object.keys(updates).every(key => {
+      const newValue = user[key];
+      const expectedValue = updates[key];
+      
+      // Comparar valores (manejar null/undefined)
+      if (newValue === null && expectedValue === null) return true;
+      if (newValue === undefined && expectedValue === null) return true;
+      if (newValue === expectedValue) return true;
+      
+      // Para fechas, comparar timestamps
+      if (newValue instanceof Date && expectedValue instanceof Date) {
+        return newValue.getTime() === expectedValue.getTime();
+      }
+      
+      console.warn(`⚠️ Campo ${key} no coincide: esperado=${expectedValue}, actual=${newValue}`);
+      return false;
+    });
+
+    if (!changesApplied) {
+      console.error('❌ Algunos cambios no se aplicaron correctamente');
+      return res.status(500).json({
+        error: 'Error al actualizar el perfil',
+        message: 'Algunos cambios no se guardaron correctamente. Por favor, intenta nuevamente.'
+      });
     }
 
     // Devolver la respuesta en el formato que espera el frontend
     const formattedUser = formatUserResponse(user);
     
+    // Construir mensaje de confirmación con los campos actualizados
+    const updatedFields = Object.keys(updates).map(key => {
+      const fieldNames = {
+        firstName: 'nombre',
+        lastName: 'apellido',
+        username: 'nombre de usuario',
+        bio: 'biografía',
+        dateOfBirth: 'fecha de nacimiento',
+        phone: 'teléfono',
+        avatar: 'foto de perfil'
+      };
+      return fieldNames[key] || key;
+    }).join(', ');
+    
     res.json({ 
-      message: 'Perfil actualizado exitosamente',
+      message: `Perfil actualizado exitosamente. Campos modificados: ${updatedFields}`,
+      updatedFields: Object.keys(updates),
       ...formattedUser, // Incluir campos directamente en la respuesta para compatibilidad
       user: formattedUser // También incluir en objeto user
     });

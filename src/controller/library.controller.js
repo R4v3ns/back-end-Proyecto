@@ -405,18 +405,35 @@ exports.likeSong = async (req, res) => {
       });
     }
 
-    // Validar que la canción exista
-    const song = await Song.findByPk(songId);
-    if (!song) {
-      return res.status(404).json({
+    // Convertir songId a número si viene como string
+    const songIdNum = typeof songId === 'string' ? parseInt(songId, 10) : songId;
+    if (isNaN(songIdNum)) {
+      return res.status(400).json({
         ok: false,
-        error: 'Canción no encontrada'
+        error: 'El ID de la canción debe ser un número válido',
+        field: 'songId'
       });
     }
 
+    console.log(`🔍 likeSong - Usuario: ${userId}, Buscando canción con ID: ${songIdNum}`);
+
+    // Validar que la canción exista
+    const song = await Song.findByPk(songIdNum);
+    if (!song) {
+      console.log(`❌ likeSong - Canción con ID ${songIdNum} no encontrada en la base de datos`);
+      return res.status(404).json({
+        ok: false,
+        error: 'Canción no encontrada',
+        songId: songIdNum
+      });
+    }
+
+    console.log(`✅ likeSong - Canción encontrada: "${song.title}" por ${song.artist}`);
+
     // Verificar si ya tiene like
-    const existingLike = await Like.findOne({ where: { userId, songId } });
+    const existingLike = await Like.findOne({ where: { userId, songId: songIdNum } });
     if (existingLike) {
+      console.log(`⚠️ likeSong - El usuario ya tiene like en esta canción`);
       return res.status(409).json({
         ok: false,
         error: 'Ya has dado like a esta canción'
@@ -424,14 +441,108 @@ exports.likeSong = async (req, res) => {
     }
 
     // Crear like
-    await Like.create({ userId, songId });
+    const newLike = await Like.create({ userId, songId: songIdNum });
+    console.log(`✅ likeSong - Like creado exitosamente (ID: ${newLike.id}) para canción ${songIdNum}`);
+
+    // Verificar que se guardó correctamente
+    const verifyLike = await Like.findByPk(newLike.id);
+    if (!verifyLike) {
+      console.error(`❌ likeSong - Error: El like no se guardó correctamente`);
+      return res.status(500).json({
+        ok: false,
+        error: 'Error al guardar el like en la base de datos'
+      });
+    }
 
     res.status(201).json({
       ok: true,
-      message: 'Like agregado exitosamente'
+      message: `"${song.title}" agregada a favoritos exitosamente`,
+      songId: songIdNum,
+      songTitle: song.title,
+      songArtist: song.artist
     });
   } catch (err) {
-    console.error('Error liking song:', err);
+    console.error('❌ Error liking song:', err);
+    res.status(500).json({
+      ok: false,
+      error: err.message || 'Error al dar like a la canción'
+    });
+  }
+};
+
+// BIB-03: Dar like a canción (con songId en la URL)
+exports.likeSongById = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { songId } = req.params;
+
+    if (!songId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'El ID de la canción es requerido',
+        field: 'songId'
+      });
+    }
+
+    // Convertir songId a número (viene como string desde la URL)
+    const songIdNum = parseInt(songId, 10);
+    if (isNaN(songIdNum)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'El ID de la canción debe ser un número válido',
+        field: 'songId'
+      });
+    }
+
+    console.log(`🔍 likeSongById - Buscando canción con ID: ${songIdNum} (tipo: ${typeof songIdNum})`);
+
+    // Validar que la canción exista
+    const song = await Song.findByPk(songIdNum);
+    if (!song) {
+      console.log(`❌ likeSongById - Canción con ID ${songIdNum} no encontrada`);
+      return res.status(404).json({
+        ok: false,
+        error: 'Canción no encontrada',
+        songId: songIdNum
+      });
+    }
+
+    console.log(`✅ likeSongById - Canción encontrada: "${song.title}" por ${song.artist}`);
+
+    // Verificar si ya tiene like (usar songIdNum para consistencia)
+    const existingLike = await Like.findOne({ where: { userId, songId: songIdNum } });
+    if (existingLike) {
+      console.log(`⚠️ likeSongById - El usuario ${userId} ya tiene like en canción ${songIdNum}`);
+      return res.status(409).json({
+        ok: false,
+        error: 'Ya has dado like a esta canción',
+        message: `Ya has agregado "${song.title}" a tus favoritos`
+      });
+    }
+
+    // Crear like usando songIdNum
+    const newLike = await Like.create({ userId, songId: songIdNum });
+    console.log(`✅ likeSongById - Like creado exitosamente (ID: ${newLike.id}) para canción ${songIdNum}`);
+
+    // Verificar que se guardó correctamente
+    const verifyLike = await Like.findByPk(newLike.id);
+    if (!verifyLike) {
+      console.error(`❌ likeSongById - Error: El like no se guardó correctamente`);
+      return res.status(500).json({
+        ok: false,
+        error: 'Error al guardar el like en la base de datos'
+      });
+    }
+
+    res.status(201).json({
+      ok: true,
+      message: `"${song.title}" agregada a favoritos exitosamente`,
+      songId: songIdNum,
+      songTitle: song.title,
+      songArtist: song.artist
+    });
+  } catch (err) {
+    console.error('Error liking song by ID:', err);
     res.status(500).json({
       ok: false,
       error: err.message || 'Error al dar like a la canción'
@@ -445,23 +556,79 @@ exports.unlikeSong = async (req, res) => {
     const userId = req.user.id;
     const { songId } = req.params;
 
-    const like = await Like.findOne({ where: { userId, songId } });
-
-    if (!like) {
-      return res.status(404).json({
+    if (!songId) {
+      return res.status(400).json({
         ok: false,
-        error: 'No has dado like a esta canción'
+        error: 'El ID de la canción es requerido',
+        field: 'songId'
       });
     }
 
+    // Convertir songId a número
+    const songIdNum = parseInt(songId, 10);
+    if (isNaN(songIdNum)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'El ID de la canción debe ser un número válido',
+        field: 'songId'
+      });
+    }
+
+    console.log(`🔍 unlikeSong - Usuario: ${userId}, Buscando like para canción: ${songIdNum}`);
+
+    // Validar que la canción exista
+    const song = await Song.findByPk(songIdNum);
+    if (!song) {
+      console.log(`❌ unlikeSong - Canción con ID ${songIdNum} no encontrada`);
+      return res.status(404).json({
+        ok: false,
+        error: 'Canción no encontrada',
+        songId: songIdNum
+      });
+    }
+
+    // Buscar el like
+    const like = await Like.findOne({ where: { userId, songId: songIdNum } });
+
+    if (!like) {
+      console.log(`⚠️ unlikeSong - El usuario ${userId} no tiene like en canción ${songIdNum}`);
+      return res.status(404).json({
+        ok: false,
+        error: 'No has dado like a esta canción',
+        message: `"${song.title}" no está en tus favoritos`
+      });
+    }
+
+    console.log(`✅ unlikeSong - Like encontrado (ID: ${like.id}), eliminando...`);
+    
+    // Guardar información antes de eliminar para el mensaje
+    const songTitle = song.title;
+    const songArtist = song.artist;
+    
+    // Eliminar el like
     await like.destroy();
+    
+    // Verificar que se eliminó correctamente
+    const verifyDelete = await Like.findByPk(like.id);
+    if (verifyDelete) {
+      console.error(`❌ unlikeSong - Error: El like no se eliminó correctamente`);
+      return res.status(500).json({
+        ok: false,
+        error: 'Error al eliminar el like de la base de datos'
+      });
+    }
+
+    console.log(`✅ unlikeSong - Like eliminado exitosamente`);
 
     res.json({
       ok: true,
-      message: 'Like eliminado exitosamente'
+      message: `"${songTitle}" eliminada de favoritos exitosamente`,
+      songId: songIdNum,
+      songTitle: songTitle,
+      songArtist: songArtist
     });
   } catch (err) {
-    console.error('Error unliking song:', err);
+    console.error('❌ Error unliking song:', err);
     res.status(500).json({
       ok: false,
       error: err.message || 'Error al quitar el like'

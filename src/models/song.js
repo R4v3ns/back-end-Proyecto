@@ -38,6 +38,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
       },
+      youtubeId: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'ID del video de YouTube para conversión a audio',
+      },
       // Campos para exploración y destacados
       isFeatured: {
         type: DataTypes.BOOLEAN,
@@ -50,6 +55,11 @@ module.exports = (sequelize, DataTypes) => {
       releaseDate: {
         type: DataTypes.DATE,
         allowNull: true,
+      },
+      isExample: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        comment: 'Indica si es una canción de ejemplo (no reproducible pero agregable a favoritos)',
       },
     },
     {

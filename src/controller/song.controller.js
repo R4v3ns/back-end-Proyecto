@@ -42,7 +42,10 @@ exports.getFeaturedSongs = async (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
 
     const songs = await Song.findAll({
-      where: { isFeatured: true },
+      where: { 
+        isFeatured: true,
+        isExample: false, // Excluir podcasts (canciones de ejemplo)
+      },
       order: [['playCount', 'DESC'], ['createdAt', 'DESC']],
       limit,
       offset,
@@ -58,6 +61,33 @@ exports.getFeaturedSongs = async (req, res) => {
     res.status(500).json({
       ok: false,
       error: err.message || 'Error al obtener canciones destacadas',
+    });
+  }
+};
+
+// Obtener podcasts (canciones con isExample: true)
+exports.getPodcasts = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = parseInt(req.query.offset) || 0;
+
+    const podcasts = await Song.findAll({
+      where: { isExample: true }, // Solo canciones de ejemplo (podcasts)
+      order: [['createdAt', 'DESC']],
+      limit,
+      offset,
+    });
+
+    res.json({
+      ok: true,
+      podcasts: podcasts.map(podcast => formatSongResponse(podcast, req)),
+      total: podcasts.length,
+    });
+  } catch (err) {
+    console.error('Error getting podcasts:', err);
+    res.status(500).json({
+      ok: false,
+      error: err.message || 'Error al obtener podcasts',
     });
   }
 };
