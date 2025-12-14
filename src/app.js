@@ -76,11 +76,13 @@ const userRoutes = require('./routes/user.routes');
 const songRoutes = require('./routes/song.routes');
 const libraryRoutes = require('./routes/library.routes');
 const youtubeRoutes = require('./routes/youtube.routes');
+const queueRoutes = require('./routes/queue.routes');
 
 app.use('/api/users', userRoutes);
 app.use('/songs', songRoutes); // El frontend espera /songs, no /api/songs
 app.use('/api/library', libraryRoutes); // Módulo de biblioteca (playlists y likes)
 app.use('/api/youtube', youtubeRoutes); // Conversión de YouTube a audio
+app.use('/api/queue', queueRoutes); // Gestión de cola de reproducción
 
 // Manejo de rutas no encontradas
 app.use((req, res) => {
