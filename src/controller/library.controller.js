@@ -281,13 +281,20 @@ exports.addSongToPlaylist = async (req, res) => {
     );
     const maxPosition = results?.maxPosition !== null ? results.maxPosition : -1;
 
-    // Agregar canción a la playlist
-    await playlist.addSong(song, {
-      through: {
-        position: maxPosition + 1,
-        addedAt: new Date()
+    // Agregar canción a la playlist usando query directo para evitar problemas con timestamps
+    await sequelize.query(
+      `INSERT INTO playlist_songs (playlistId, songId, position, addedAt) 
+       VALUES (:playlistId, :songId, :position, :addedAt)`,
+      {
+        replacements: {
+          playlistId: id,
+          songId: songId,
+          position: maxPosition + 1,
+          addedAt: new Date()
+        },
+        type: sequelize.QueryTypes.INSERT
       }
-    });
+    );
 
     res.json({
       ok: true,
